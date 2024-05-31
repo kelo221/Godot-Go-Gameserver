@@ -1,0 +1,16 @@
+[gd_scene load_steps=3 format=3 uid="uid://mjsdmin7smrf"]
+
+[ext_resource type="Script" path="res://scripts/client.gd" id="1_dguxk"]
+[ext_resource type="Script" path="res://scripts/NameGenerator.gd" id="2_n3jxc"]
+
+[node name="Server" type="Node3D"]
+script = ExtResource("1_dguxk")
+
+[node name="ServerPollTimer" type="Timer" parent="."]
+wait_time = 0.016
+autostart = true
+
+[node name="NameGenerator" type="Node3D" parent="."]
+script = ExtResource("2_n3jxc")
+
+[connection signal="timeout" from="ServerPollTimer" to="." method="_on_server_poll_timer_timeout"]

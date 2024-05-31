@@ -1,0 +1,37 @@
+[gd_scene load_steps=5 format=3 uid="uid://u6dq3lno28a7"]
+
+[ext_resource type="PackedScene" uid="uid://dv7xsg2fyfedt" path="res://scenes/player.tscn" id="1_gwqg3"]
+
+[sub_resource type="Environment" id="Environment_ghild"]
+background_energy_multiplier = 0.0
+ambient_light_source = 1
+tonemap_mode = 3
+
+[sub_resource type="BoxMesh" id="BoxMesh_gs6ip"]
+flip_faces = true
+size = Vector3(20, 20, 20)
+
+[sub_resource type="ConcavePolygonShape3D" id="ConcavePolygonShape3D_o0bfs"]
+data = PackedVector3Array(10, 10, 10, -10, 10, 10, -10, -10, 10, 10, -10, 10, 10, 10, 10, -10, -10, 10, -10, 10, -10, 10, 10, -10, 10, -10, -10, -10, -10, -10, -10, 10, -10, 10, -10, -10, 10, 10, -10, 10, 10, 10, 10, -10, 10, 10, -10, -10, 10, 10, -10, 10, -10, 10, -10, 10, 10, -10, 10, -10, -10, -10, -10, -10, -10, 10, -10, 10, 10, -10, -10, -10, -10, 10, 10, 10, 10, 10, 10, 10, -10, -10, 10, -10, -10, 10, 10, 10, 10, -10, 10, -10, 10, -10, -10, 10, -10, -10, -10, 10, -10, -10, 10, -10, 10, -10, -10, -10)
+
+[node name="Main" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_ghild")
+
+[node name="Player" parent="." instance=ExtResource("1_gwqg3")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 0.5, 0.866025, 0, -0.866025, 0.5, 0, 3, 0)
+light_energy = 0.03
+shadow_enabled = true
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10, 0)
+mesh = SubResource("BoxMesh_gs6ip")
+
+[node name="StaticBody3D" type="StaticBody3D" parent="MeshInstance3D"]
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="MeshInstance3D/StaticBody3D"]
+shape = SubResource("ConcavePolygonShape3D_o0bfs")

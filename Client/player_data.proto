@@ -1,0 +1,29 @@
+syntax = "proto2";
+package tutorial;
+
+option go_package = "./proto";
+
+message Player {
+  optional string name = 1;
+  required int32 id = 2;
+  required float health = 3;
+
+  message Position {
+    required float x = 1;
+    required float y = 2;
+    required float z = 3;
+  }
+
+  message Rotation {
+    required float x = 1;
+    required float y = 2;
+    required float z = 3;
+  }
+
+  repeated Position pos = 4;
+  repeated Rotation rot = 5;
+}
+
+message Players {
+  repeated Player player = 1;
+}
