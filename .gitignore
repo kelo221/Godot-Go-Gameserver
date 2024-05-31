@@ -5,6 +5,8 @@
 # Godot 4+ specific ignores
 .godot/
 
+.idea/*
+
 # Godot-specific ignores
 .import/
 export.cfg
