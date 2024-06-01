@@ -6,24 +6,27 @@ import (
 	"github.com/lxzan/gws"
 	proto2 "google.golang.org/protobuf/proto"
 	"io"
-	"math/rand/v2"
+	"math/rand"
 	"net/http"
+	"sync"
 	"time"
 )
 
 const (
 	PingInterval = 60 * time.Second
-	PingWait     = 60 * time.Second
+	PingWait     = 3 * time.Second
 )
 
-var players proto.Players
-var upgrader *gws.Upgrader
+var (
+	players  proto.Players
+	mu       sync.Mutex
+	upgrader *gws.Upgrader
+)
 
 func main() {
-
 	router := http.NewServeMux()
-	router.HandleFunc("GET /websocket", websocket)
-	router.HandleFunc("POST /register", register)
+	router.HandleFunc("/websocket", websocket)
+	router.HandleFunc("/register", register)
 
 	upgrader = gws.NewUpgrader(&Handler{}, &gws.ServerOption{
 		ParallelEnabled:   true,                                  // Parallel message processing
@@ -31,7 +34,10 @@ func main() {
 		PermessageDeflate: gws.PermessageDeflate{Enabled: false}, // Enable compression
 	})
 
-	http.ListenAndServe(":8080", router)
+	err := http.ListenAndServe(":8080", router)
+	if err != nil {
+		return
+	}
 }
 
 func websocket(writer http.ResponseWriter, request *http.Request) {
@@ -45,35 +51,32 @@ func websocket(writer http.ResponseWriter, request *http.Request) {
 }
 
 func register(writer http.ResponseWriter, request *http.Request) {
-
-	// Read the request body
 	body, err := io.ReadAll(request.Body)
 	if err != nil {
 		http.Error(writer, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
+	defer request.Body.Close()
 
-		}
-	}(request.Body)
+	playerID := rand.Int31()
 
-	print(string(body))
+	newX := rand.Intn(8) - 8
+	newZ := rand.Intn(8) - 8
 
-	var PlayerID = rand.Int32()
 	p := &proto.Player{
-		Id:     proto2.Int32(PlayerID),
+		Id:     proto2.Int32(playerID),
 		Name:   proto2.String(string(body)),
 		Health: proto2.Float32(100),
 		Pos: []*proto.Player_Position{
-			{X: proto2.Float32(0), Y: proto2.Float32(0), Z: proto2.Float32(0)},
+			{X: proto2.Float32(float32(newX)), Y: proto2.Float32(1.0), Z: proto2.Float32(float32(newZ))},
 		},
 	}
 
+	mu.Lock()
 	players.Player = append(players.Player, p)
+	mu.Unlock()
 
-	playerIDStr := fmt.Sprintf("%d", PlayerID)
+	playerIDStr := fmt.Sprintf("%d", playerID)
 	_, _ = writer.Write([]byte(playerIDStr))
 }
 
@@ -83,8 +86,19 @@ func (c *Handler) OnOpen(socket *gws.Conn) {
 	_ = socket.SetDeadline(time.Now().Add(PingInterval + PingWait))
 }
 
+// OnClose removes the player from the list of players upon disconnection.
 func (c *Handler) OnClose(socket *gws.Conn, err error) {
-	fmt.Println(err)
+	playerID, found := socket.Session().Load("player_id")
+	if found {
+		mu.Lock()
+		defer mu.Unlock()
+		for i := 0; i < len(players.Player); i++ {
+			if players.Player[i].GetId() == playerID.(int32) {
+				players.Player = append(players.Player[:i], players.Player[i+1:]...)
+				break
+			}
+		}
+	}
 }
 
 func (c *Handler) OnPing(socket *gws.Conn, payload []byte) {
@@ -94,22 +108,52 @@ func (c *Handler) OnPing(socket *gws.Conn, payload []byte) {
 
 func (c *Handler) OnPong(socket *gws.Conn, payload []byte) {}
 
-// OnMessage recives one player's information and returns information of all players.
+// OnMessage receives one player's information and returns information of all players.
 func (c *Handler) OnMessage(socket *gws.Conn, message *gws.Message) {
 	defer message.Close()
-
-	var byteSlice = []byte{}
+	var byteSlice []byte
 
 	if len(message.Bytes()) != 0 {
 		p := proto.Player{}
-
 		err := proto2.Unmarshal(message.Bytes(), &p)
 		if err != nil {
 			return
 		}
 
-		players := proto.Player{}
-		byteSlice, _ = proto2.Marshal(&players)
+		_, exists := socket.Session().Load("player_id")
+		if !exists {
+			socket.Session().Store("player_id", p.GetId())
+		}
+
+		mu.Lock()
+		// Update the player's position and rotation.
+		for i := 0; i < len(players.Player); i++ {
+			if players.Player[i].GetId() == p.GetId() {
+				players.Player[i].Pos = p.Pos
+				players.Player[i].Rot = p.Rot
+				break
+			}
+		}
+		var protoerr error
+		byteSlice, protoerr = proto2.Marshal(&players)
+
+		for i := 0; i < len(players.Player); i++ {
+			fmt.Println(players.Player[i].GetId(), players.Player[i].GetName(), players.Player[i].GetHealth(), players.Player[i].GetPos(), players.Player[i].GetRot())
+		}
+
+		mu.Unlock()
+		if protoerr != nil {
+			println("error, ", protoerr.Error())
+		}
+	} else {
+		fmt.Println("Warning no new data received, sending old data.")
+		mu.Lock()
+		var protoerr error
+		byteSlice, protoerr = proto2.Marshal(&players)
+		mu.Unlock()
+		if protoerr != nil {
+			println("error, ", protoerr.Error())
+		}
 	}
 
 	err := socket.WriteMessage(0x2, byteSlice)

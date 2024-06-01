@@ -2,6 +2,9 @@ extends CharacterBody3D
 
 var local_player_data := Protobuff.Player.new()
 var multiplayer_id := -1
+@onready var player_name_label: Label3D = $PlayerNameLabel
+
+@onready var camera_3d: Camera3D = $Camera3D
 
 const SPEED = 5.0
 const JUMP_VELOCITY = 4.5
@@ -15,29 +18,49 @@ var sync_pos_z : float
 var sync_rot_y : float
 
 func apply_new_position() ->void:
+	local_player_data.clear_pos()
 	var _pos
 	_pos = local_player_data.add_pos()
-	_pos.set_x(snapped(global_position.x, 0.01))
-	_pos.set_y(snapped(global_position.y, 0.01))
-	_pos.set_z(snapped(global_position.z, 0.01))
+	_pos.set_x(global_position.x)
+	_pos.set_y(global_position.y)
+	_pos.set_z(global_position.z)
 	
 func apply_new_rotation() ->void:
+	local_player_data.clear_rot()
 	var _rot
 	_rot = local_player_data.add_rot()
 	_rot.set_x(rotation.x)
 	_rot.set_y(rotation.y)
 	_rot.set_z(rotation.z)
 
+func connected() -> void:
+	player_name_label.text = local_player_data.get_name()
+	if Client.player_id == local_player_data.get_id():
+		camera_3d.current = true
+	
 func _ready() -> void:
-	local_player_data.set_health(100)
-	Client.connect("player_id_received", _on_player_id_received)
-	local_player_data.set_name(Client.generate_name())
-	Client.register_player(local_player_data.get_name())
+	if Client.first_message:
+		set_physics_process(false)
+		local_player_data.set_health(100)
+		local_player_data.set_id(-1)
+		Client.connect("player_id_received", _on_player_id_received)
+		Client.connect("puppet_new_position", puppet_new_position)
+		Client.connect("player_new_position", set_spawn_position)
+		local_player_data.set_name(Client.generate_name())
+		Client.register_player(local_player_data.get_name())
+
+func puppet_new_position(_position : Vector3, id :int):
+	if local_player_data.get_id() == id:
+		global_position = _position
+
+func set_spawn_position(_position : Vector3):
+	global_position = _position
+
 
 func _on_player_id_received(player_id: String):
 	local_player_data.set_id(int(player_id))
-	print("signal set")
-	name_received = true
+	set_physics_process(true)
+	connected()
 
 
 # Get the gravity from the project settings to be synced with RigidBody nodes.
@@ -46,9 +69,12 @@ var gravity: float = ProjectSettings.get_setting("physics/3d/default_gravity")
 func set_new_location(new_position : Vector3) -> void:
 	self.global_position = new_position
 
+
+var polling_tick := true
+
 func _physics_process(delta: float) -> void:
 	
-	if !name_received:
+	if Client.player_id != local_player_data.get_id():
 		return
 	
 	# Add the gravity.
@@ -81,6 +107,8 @@ func _physics_process(delta: float) -> void:
 	
 	move_and_slide()
 	
-	if name_received:
-		print("packed")
-		Client.local_player_data = local_player_data.to_bytes()
+	
+	if polling_tick == true:
+		Client.local_player_bytes = local_player_data.to_bytes()
+	
+	polling_tick = !polling_tick

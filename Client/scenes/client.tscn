@@ -6,11 +6,5 @@
 [node name="Server" type="Node3D"]
 script = ExtResource("1_dguxk")
 
-[node name="ServerPollTimer" type="Timer" parent="."]
-wait_time = 0.016
-autostart = true
-
 [node name="NameGenerator" type="Node3D" parent="."]
 script = ExtResource("2_n3jxc")
-
-[connection signal="timeout" from="ServerPollTimer" to="." method="_on_server_poll_timer_timeout"]

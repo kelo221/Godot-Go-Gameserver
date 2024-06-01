@@ -1,6 +1,6 @@
 [gd_scene load_steps=5 format=3 uid="uid://u6dq3lno28a7"]
 
-[ext_resource type="PackedScene" uid="uid://dv7xsg2fyfedt" path="res://scenes/player.tscn" id="1_gwqg3"]
+[ext_resource type="Script" path="res://scripts/main.gd" id="1_wansf"]
 
 [sub_resource type="Environment" id="Environment_ghild"]
 background_energy_multiplier = 0.0
@@ -15,12 +15,10 @@ size = Vector3(20, 20, 20)
 data = PackedVector3Array(10, 10, 10, -10, 10, 10, -10, -10, 10, 10, -10, 10, 10, 10, 10, -10, -10, 10, -10, 10, -10, 10, 10, -10, 10, -10, -10, -10, -10, -10, -10, 10, -10, 10, -10, -10, 10, 10, -10, 10, 10, 10, 10, -10, 10, 10, -10, -10, 10, 10, -10, 10, -10, 10, -10, 10, 10, -10, 10, -10, -10, -10, -10, -10, -10, 10, -10, 10, 10, -10, -10, -10, -10, 10, 10, 10, 10, 10, 10, 10, -10, -10, 10, -10, -10, 10, 10, 10, 10, -10, 10, -10, 10, -10, -10, 10, -10, -10, -10, 10, -10, -10, 10, -10, 10, -10, -10, -10)
 
 [node name="Main" type="Node3D"]
+script = ExtResource("1_wansf")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_ghild")
-
-[node name="Player" parent="." instance=ExtResource("1_gwqg3")]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 0.5, 0.866025, 0, -0.866025, 0.5, 0, 3, 0)
@@ -35,3 +33,5 @@ mesh = SubResource("BoxMesh_gs6ip")
 
 [node name="CollisionShape3D" type="CollisionShape3D" parent="MeshInstance3D/StaticBody3D"]
 shape = SubResource("ConcavePolygonShape3D_o0bfs")
+
+[node name="Players" type="Node3D" parent="."]
