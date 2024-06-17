@@ -670,27 +670,46 @@ class Player:
 		service.field = _name
 		data[_name.tag] = service
 		
-		_id = PBField.new("id", PB_DATA_TYPE.INT32, PB_RULE.REQUIRED, 2, false, DEFAULT_VALUES_2[PB_DATA_TYPE.INT32])
+		_id = PBField.new("id", PB_DATA_TYPE.UINT32, PB_RULE.REQUIRED, 2, false, DEFAULT_VALUES_2[PB_DATA_TYPE.UINT32])
 		service = PBServiceField.new()
 		service.field = _id
 		data[_id.tag] = service
 		
-		_health = PBField.new("health", PB_DATA_TYPE.FLOAT, PB_RULE.REQUIRED, 3, false, DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT])
+		_player_color = PBField.new("player_color", PB_DATA_TYPE.STRING, PB_RULE.OPTIONAL, 3, false, DEFAULT_VALUES_2[PB_DATA_TYPE.STRING])
+		service = PBServiceField.new()
+		service.field = _player_color
+		data[_player_color.tag] = service
+		
+		_rotation_y = PBField.new("rotation_y", PB_DATA_TYPE.FLOAT, PB_RULE.REQUIRED, 4, false, DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT])
+		service = PBServiceField.new()
+		service.field = _rotation_y
+		data[_rotation_y.tag] = service
+		
+		_rotation_x = PBField.new("rotation_x", PB_DATA_TYPE.FLOAT, PB_RULE.REQUIRED, 5, false, DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT])
+		service = PBServiceField.new()
+		service.field = _rotation_x
+		data[_rotation_x.tag] = service
+		
+		_health = PBField.new("health", PB_DATA_TYPE.FLOAT, PB_RULE.REQUIRED, 6, false, DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT])
 		service = PBServiceField.new()
 		service.field = _health
 		data[_health.tag] = service
 		
-		_pos = PBField.new("pos", PB_DATA_TYPE.MESSAGE, PB_RULE.REPEATED, 4, false, [])
+		_current_spell = PBField.new("current_spell", PB_DATA_TYPE.UINT32, PB_RULE.REQUIRED, 7, false, DEFAULT_VALUES_2[PB_DATA_TYPE.UINT32])
+		service = PBServiceField.new()
+		service.field = _current_spell
+		data[_current_spell.tag] = service
+		
+		_casting = PBField.new("casting", PB_DATA_TYPE.BOOL, PB_RULE.REQUIRED, 8, false, DEFAULT_VALUES_2[PB_DATA_TYPE.BOOL])
+		service = PBServiceField.new()
+		service.field = _casting
+		data[_casting.tag] = service
+		
+		_pos = PBField.new("pos", PB_DATA_TYPE.MESSAGE, PB_RULE.REPEATED, 9, false, [])
 		service = PBServiceField.new()
 		service.field = _pos
 		service.func_ref = Callable(self, "add_pos")
 		data[_pos.tag] = service
-		
-		_rot = PBField.new("rot", PB_DATA_TYPE.MESSAGE, PB_RULE.REPEATED, 5, false, [])
-		service = PBServiceField.new()
-		service.field = _rot
-		service.func_ref = Callable(self, "add_rot")
-		data[_rot.tag] = service
 		
 	var data = {}
 	
@@ -708,39 +727,73 @@ class Player:
 		return _id.value
 	func clear_id() -> void:
 		data[2].state = PB_SERVICE_STATE.UNFILLED
-		_id.value = DEFAULT_VALUES_2[PB_DATA_TYPE.INT32]
+		_id.value = DEFAULT_VALUES_2[PB_DATA_TYPE.UINT32]
 	func set_id(value : int) -> void:
 		_id.value = value
+	
+	var _player_color: PBField
+	func get_player_color() -> String:
+		return _player_color.value
+	func clear_player_color() -> void:
+		data[3].state = PB_SERVICE_STATE.UNFILLED
+		_player_color.value = DEFAULT_VALUES_2[PB_DATA_TYPE.STRING]
+	func set_player_color(value : String) -> void:
+		_player_color.value = value
+	
+	var _rotation_y: PBField
+	func get_rotation_y() -> float:
+		return _rotation_y.value
+	func clear_rotation_y() -> void:
+		data[4].state = PB_SERVICE_STATE.UNFILLED
+		_rotation_y.value = DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT]
+	func set_rotation_y(value : float) -> void:
+		_rotation_y.value = value
+	
+	var _rotation_x: PBField
+	func get_rotation_x() -> float:
+		return _rotation_x.value
+	func clear_rotation_x() -> void:
+		data[5].state = PB_SERVICE_STATE.UNFILLED
+		_rotation_x.value = DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT]
+	func set_rotation_x(value : float) -> void:
+		_rotation_x.value = value
 	
 	var _health: PBField
 	func get_health() -> float:
 		return _health.value
 	func clear_health() -> void:
-		data[3].state = PB_SERVICE_STATE.UNFILLED
+		data[6].state = PB_SERVICE_STATE.UNFILLED
 		_health.value = DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT]
 	func set_health(value : float) -> void:
 		_health.value = value
+	
+	var _current_spell: PBField
+	func get_current_spell() -> int:
+		return _current_spell.value
+	func clear_current_spell() -> void:
+		data[7].state = PB_SERVICE_STATE.UNFILLED
+		_current_spell.value = DEFAULT_VALUES_2[PB_DATA_TYPE.UINT32]
+	func set_current_spell(value : int) -> void:
+		_current_spell.value = value
+	
+	var _casting: PBField
+	func get_casting() -> bool:
+		return _casting.value
+	func clear_casting() -> void:
+		data[8].state = PB_SERVICE_STATE.UNFILLED
+		_casting.value = DEFAULT_VALUES_2[PB_DATA_TYPE.BOOL]
+	func set_casting(value : bool) -> void:
+		_casting.value = value
 	
 	var _pos: PBField
 	func get_pos() -> Array:
 		return _pos.value
 	func clear_pos() -> void:
-		data[4].state = PB_SERVICE_STATE.UNFILLED
+		data[9].state = PB_SERVICE_STATE.UNFILLED
 		_pos.value = []
 	func add_pos() -> Player.Position:
 		var element = Player.Position.new()
 		_pos.value.append(element)
-		return element
-	
-	var _rot: PBField
-	func get_rot() -> Array:
-		return _rot.value
-	func clear_rot() -> void:
-		data[5].state = PB_SERVICE_STATE.UNFILLED
-		_rot.value = []
-	func add_rot() -> Player.Rotation:
-		var element = Player.Rotation.new()
-		_rot.value.append(element)
 		return element
 	
 	class Position:
@@ -758,75 +811,6 @@ class Player:
 			data[_y.tag] = service
 			
 			_z = PBField.new("z", PB_DATA_TYPE.FLOAT, PB_RULE.REQUIRED, 3, false, DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT])
-			service = PBServiceField.new()
-			service.field = _z
-			data[_z.tag] = service
-			
-		var data = {}
-		
-		var _x: PBField
-		func get_x() -> float:
-			return _x.value
-		func clear_x() -> void:
-			data[1].state = PB_SERVICE_STATE.UNFILLED
-			_x.value = DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT]
-		func set_x(value : float) -> void:
-			_x.value = value
-		
-		var _y: PBField
-		func get_y() -> float:
-			return _y.value
-		func clear_y() -> void:
-			data[2].state = PB_SERVICE_STATE.UNFILLED
-			_y.value = DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT]
-		func set_y(value : float) -> void:
-			_y.value = value
-		
-		var _z: PBField
-		func get_z() -> float:
-			return _z.value
-		func clear_z() -> void:
-			data[3].state = PB_SERVICE_STATE.UNFILLED
-			_z.value = DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT]
-		func set_z(value : float) -> void:
-			_z.value = value
-		
-		func _to_string() -> String:
-			return PBPacker.message_to_string(data)
-			
-		func to_bytes() -> PackedByteArray:
-			return PBPacker.pack_message(data)
-			
-		func from_bytes(bytes : PackedByteArray, offset : int = 0, limit : int = -1) -> int:
-			var cur_limit = bytes.size()
-			if limit != -1:
-				cur_limit = limit
-			var result = PBPacker.unpack_message(data, bytes, offset, cur_limit)
-			if result == cur_limit:
-				if PBPacker.check_required(data):
-					if limit == -1:
-						return PB_ERR.NO_ERRORS
-				else:
-					return PB_ERR.REQUIRED_FIELDS
-			elif limit == -1 && result > 0:
-				return PB_ERR.PARSE_INCOMPLETE
-			return result
-		
-	class Rotation:
-		func _init():
-			var service
-			
-			_x = PBField.new("x", PB_DATA_TYPE.FLOAT, PB_RULE.OPTIONAL, 1, false, DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT])
-			service = PBServiceField.new()
-			service.field = _x
-			data[_x.tag] = service
-			
-			_y = PBField.new("y", PB_DATA_TYPE.FLOAT, PB_RULE.REQUIRED, 2, false, DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT])
-			service = PBServiceField.new()
-			service.field = _y
-			data[_y.tag] = service
-			
-			_z = PBField.new("z", PB_DATA_TYPE.FLOAT, PB_RULE.OPTIONAL, 3, false, DEFAULT_VALUES_2[PB_DATA_TYPE.FLOAT])
 			service = PBServiceField.new()
 			service.field = _z
 			data[_z.tag] = service

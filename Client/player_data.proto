@@ -4,9 +4,17 @@ package tutorial;
 option go_package = "./proto";
 
 message Player {
+
   optional string name = 1;
-  required int32 id = 2;
-  required float health = 3;
+  required uint32 id = 2;
+  optional string player_color = 3;
+
+  required float rotation_y = 4;
+  required float rotation_x = 5;
+
+  required float health = 6;
+  required uint32 current_spell = 7;
+  required bool casting = 8;
 
   message Position {
     required float x = 1;
@@ -14,14 +22,8 @@ message Player {
     required float z = 3;
   }
 
-  message Rotation {
-    optional float x = 1;
-    required float y = 2;
-    optional float z = 3;
-  }
+  repeated Position pos = 9;
 
-  repeated Position pos = 4;
-  repeated Rotation rot = 5;
 }
 
 message Players {

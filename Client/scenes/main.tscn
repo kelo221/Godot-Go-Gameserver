@@ -15,18 +15,14 @@ size = Vector3(20, 20, 20)
 data = PackedVector3Array(10, 10, 10, -10, 10, 10, -10, -10, 10, 10, -10, 10, 10, 10, 10, -10, -10, 10, -10, 10, -10, 10, 10, -10, 10, -10, -10, -10, -10, -10, -10, 10, -10, 10, -10, -10, 10, 10, -10, 10, 10, 10, 10, -10, 10, 10, -10, -10, 10, 10, -10, 10, -10, 10, -10, 10, 10, -10, 10, -10, -10, -10, -10, -10, -10, 10, -10, 10, 10, -10, -10, -10, -10, 10, 10, 10, 10, 10, 10, 10, -10, -10, 10, -10, -10, 10, 10, 10, 10, -10, 10, -10, 10, -10, -10, 10, -10, -10, -10, 10, -10, -10, 10, -10, 10, -10, -10, -10)
 
 [node name="Main" type="Node3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, -5, 0)
 script = ExtResource("1_wansf")
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Environment_ghild")
 
-[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 0.5, 0.866025, 0, -0.866025, 0.5, 0, 3, 0)
-light_energy = 0.03
-shadow_enabled = true
-
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 10, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 13, 0)
 mesh = SubResource("BoxMesh_gs6ip")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="MeshInstance3D"]
@@ -35,3 +31,9 @@ mesh = SubResource("BoxMesh_gs6ip")
 shape = SubResource("ConcavePolygonShape3D_o0bfs")
 
 [node name="Players" type="Node3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 5, 0)
+
+[node name="OmniLight3D" type="OmniLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 8, 0)
+shadow_enabled = true
+omni_range = 18.2156
