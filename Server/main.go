@@ -11,15 +11,18 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
 
 var (
-	players  proto.Players
 	upgrader = newUpgrader()
-	mu       sync.Mutex
+	mu       sync.RWMutex
 )
+var players = make(map[uint32]*proto.Player)
+var conns = make(map[uint32]*websocket.Conn)
 
 func newUpgrader() *websocket.Upgrader {
 	u := websocket.NewUpgrader()
@@ -30,16 +33,14 @@ func newUpgrader() *websocket.Upgrader {
 }
 
 func onClose(c *websocket.Conn, err error) {
-
-	playerID := c.Session()
-	if playerID != nil {
-		mu.Lock()
-		defer mu.Unlock()
-		for i := 0; i < len(players.Player); i++ {
-			if players.Player[i].GetId() == playerID {
-				players.Player = append(players.Player[:i], players.Player[i+1:]...)
-				break
-			}
+	session := c.Session()
+	if session != nil {
+		playerID, ok := session.(uint32)
+		if ok {
+			mu.Lock()
+			delete(players, playerID)
+			delete(conns, playerID)
+			mu.Unlock()
 		}
 	}
 
@@ -47,43 +48,161 @@ func onClose(c *websocket.Conn, err error) {
 	fmt.Println("OnClose:", c.RemoteAddr().String(), err)
 }
 
-func onMessage(c *websocket.Conn, messageType websocket.MessageType, _data []byte) {
+const (
+	NULL = iota
+	REGISTER
+	UPDATE_LOCATION
+	POLL_LOCATIONS
+	DAMAGE_PLAYER
+	INIT_CAST
+	RESPAWN_PLAYER
+)
 
+func onMessage(c *websocket.Conn, messageType websocket.MessageType, _data []byte) {
 	msgType := _data[0]
 	data := _data[1:]
 
 	switch msgType {
-	case 1:
-		playerName := string(data)
+	case REGISTER:
+		player_data := strings.Fields(string(data))
+		playerName := player_data[0]
+		playerColor := player_data[1]
+
 		fmt.Println("Registering player", playerName)
-		err := c.WriteMessage(2, registerPlayer(playerName, c))
+		err := c.WriteMessage(2, registerPlayer(playerName, playerColor, c))
 		if err != nil {
 			return
 		}
-	case 2:
+	case UPDATE_LOCATION:
 		updatePlayerLocation(data)
-	case 3:
+	case POLL_LOCATIONS:
 		err := c.WriteMessage(2, pollPlayerLocations())
 		if err != nil {
 			return
 		}
-	default:
-		fmt.Println("Unknown message type")
-	}
+	case DAMAGE_PLAYER:
+		// If player is killed and needs to be respawned, return the new player state
+		isDead := damagePlayer(data)
+		if isDead != nil {
+			broadcastMessage(6, isDead)
+		}
+	case INIT_CAST:
+		playerID := (string(data))
+		playerStartCast(playerID)
+	case RESPAWN_PLAYER:
 
+	default:
+		fmt.Println("Unknown message type", msgType)
+	}
 }
 
-func pollPlayerLocations() []byte {
+func respawnPlayer(p *proto.Player) []byte {
 
-	mu.Lock()
-	byteSlice, protoerr := proto2.Marshal(&players)
-	mu.Unlock()
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+
+	newX := rnd.Float32()*18 - 9
+	newZ := rnd.Float32()*18 - 9
+
+	p.Pos = []*proto.Player_Position{
+		{X: proto2.Float32(newX), Y: proto2.Float32(1.0), Z: proto2.Float32(newZ)},
+	}
+	p.Health = proto2.Float32(100)
+
+	byteSlice, protoerr := proto2.Marshal(p)
 
 	if protoerr != nil {
 		println(protoerr.Error())
 		return nil
 	}
 
+	return append([]byte{6}, byteSlice...)
+}
+
+func playerStartCast(id string) {
+
+	u64, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		return
+	}
+
+	p := proto.Damage{
+		CasterId: proto2.Uint32(uint32(u64)),
+		TargetId: proto2.Uint32(0),
+		Damage:   proto2.Float32(0),
+	}
+
+	byteSlice, protoerr := proto2.Marshal(&p)
+
+	if protoerr != nil {
+		println(protoerr.Error())
+		return
+	}
+
+	broadcastMessage(INIT_CAST, byteSlice)
+}
+
+// Broadcast a message to all clients
+func broadcastMessage(messageType byte, message []byte) {
+	mu.RLock()
+	defer mu.RUnlock()
+	for _, conn := range conns {
+		err := conn.WriteMessage(2, append([]byte{messageType}, message...))
+		if err != nil {
+			fmt.Println("Failed to send message to client:", err)
+		}
+	}
+}
+
+func damagePlayer(data []byte) []byte {
+	p := proto.Damage{}
+	err := proto2.Unmarshal(data, &p)
+	if err != nil {
+		println(err.Error())
+	}
+
+	queRespawn := false
+	fmt.Println("Incoming damage: ", p.GetDamage())
+
+	var targetPlayer *proto.Player
+
+	mu.Lock()
+	if player, ok := players[p.GetTargetId()]; ok {
+		targetPlayer = player
+		player.Health = proto2.Float32(player.GetHealth() - p.GetDamage())
+		if player.GetHealth() <= 0 {
+			queRespawn = true
+		}
+
+	}
+	mu.Unlock()
+
+	byteSlice, protoerr := proto2.Marshal(targetPlayer)
+	if protoerr != nil {
+		println(protoerr.Error())
+	}
+
+	// Broadcast the updated player state to all clients
+	broadcastMessage(DAMAGE_PLAYER, byteSlice)
+
+	if queRespawn {
+		return respawnPlayer(targetPlayer)
+	}
+	return nil
+}
+
+func pollPlayerLocations() []byte {
+	mu.RLock()
+	playerSlice := make([]*proto.Player, 0, len(players))
+	for _, player := range players {
+		playerSlice = append(playerSlice, player)
+	}
+	byteSlice, protoerr := proto2.Marshal(&proto.Players{Player: playerSlice})
+	mu.RUnlock()
+
+	if protoerr != nil {
+		println(protoerr.Error())
+		return nil
+	}
 	return append([]byte{3}, byteSlice...)
 }
 
@@ -96,28 +215,26 @@ func updatePlayerLocation(data []byte) {
 
 	mu.Lock()
 	// Update the player's position and rotation.
-	for i := 0; i < len(players.Player); i++ {
-		if players.Player[i].GetId() == p.GetId() {
-			players.Player[i].Pos = p.Pos
-			players.Player[i].RotationY = p.RotationY
-			players.Player[i].RotationX = p.RotationX
-			break
-		}
+	if player, ok := players[p.GetId()]; ok {
+		player.Pos = p.Pos
+		player.RotationY = p.RotationY
+		player.RotationX = p.RotationX
 	}
-
 	mu.Unlock()
 }
 
-func registerPlayer(playerName string, c *websocket.Conn) []byte {
+func registerPlayer(playerName string, playerColor string, c *websocket.Conn) []byte {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
-	newX := rand.Intn(8) - 8
-	newZ := rand.Intn(8) - 8
+	newX := rnd.Float32()*18 - 9
+	newZ := rnd.Float32()*18 - 9
 
 	playerID := rand.Uint32()
 	c.SetSession(playerID)
 	playerState := proto.PLAYER_STATE_STANDING
 
 	p := &proto.Player{
+		PlayerColor:  proto2.String(playerColor),
 		PlayerState:  &playerState,
 		Name:         proto2.String(playerName),
 		Id:           proto2.Uint32(playerID),
@@ -127,12 +244,13 @@ func registerPlayer(playerName string, c *websocket.Conn) []byte {
 		CurrentSpell: proto2.Uint32(0),
 		Casting:      proto2.Bool(false),
 		Pos: []*proto.Player_Position{
-			{X: proto2.Float32(float32(newX)), Y: proto2.Float32(1.0), Z: proto2.Float32(float32(newZ))},
+			{X: proto2.Float32(newX), Y: proto2.Float32(1.0), Z: proto2.Float32(newZ)},
 		},
 	}
 
 	mu.Lock()
-	players.Player = append(players.Player, p)
+	players[playerID] = p
+	conns[playerID] = c
 	byteSlice, protoerr := proto2.Marshal(p)
 	mu.Unlock()
 

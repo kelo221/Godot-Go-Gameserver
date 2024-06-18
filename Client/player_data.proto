@@ -4,7 +4,6 @@ package tutorial;
 option go_package = "./proto";
 
 message Player {
-
   optional string name = 1;
   required uint32 id = 2;
   optional string player_color = 3;
@@ -24,6 +23,19 @@ message Player {
 
   repeated Position pos = 9;
 
+  required PLAYER_STATE player_state = 10;
+}
+
+message Damage{
+  required uint32 caster_id = 1;
+  required uint32 target_id = 2;
+  required float damage = 3;
+}
+
+enum PLAYER_STATE {
+  STANDING = 0;
+  CROUCHING = 1;
+  JUMPING = 2;
 }
 
 message Players {
