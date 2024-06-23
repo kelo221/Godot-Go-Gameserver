@@ -1,137 +1,216 @@
-extends "ws_webrtc_client.gd"
+extends Node
 
-var remote_player_data := Protobuff.Players.new()
-var local_player_bytes : PackedByteArray
+enum  {
+	REQUEST_PLAYERS,
+	REGISTER,
+	UPDATE_LOCATION,
+	POLL_LOCATIONS,
+	DAMAGE_PLAYER,
+	INIT_CAST,
+	RESPAWN_PLAYER,
+	REQUEST_SCOREBOARD,
+	PLAYER_DISCONNECT,
+}
+
+
+var peer := WebSocketPeer.new()
+var local_player_id := 0
+
+
+var scoreboard_data : ScoreboardProto.Scoreboard
 
 var puppet_data_bytes : PackedByteArray
-var puppet_data : Protobuff.Players
+var puppet_data : PlayerProto.Players
 
-signal player_id_received(player_id: int)
+signal player_registed(player: PlayerProto.Player)
 signal player_new_position(new_position : Vector3)
-signal puppet_new_position(new_position : Vector3, id : int)
-signal new_puppet(new_position : Vector3, player_data : Protobuff.Player)
+
+signal puppet_fire_projectile(puppet: PlayerProto.Player)
+signal puppet_new_position(puppet_id : int)
+signal new_puppet(player_data : PlayerProto.Player)
+
+signal update_health(player_damage : PlayerProto.Player)
+signal update_scoreboard()
+signal player_died(player: PlayerProto.Player)
 
 var player_id := 0
 
-const NOUNS := ["Computer", "Mountain", "Ocean", "Book", "Music", "Television", "Apple", "City", "Car", "Space"];
-const ADJECTIVES := ["Happy", "Sad", "Excited", "Angry", "Joyful", "Peaceful", "Grumpy", "Elated", "Nervous", "Relaxed"];
+const NOUNS := ["Computer", "Mountain", "Ocean", "Book", "Music", "Television", "Apple", "City", "Car", "Space"]
+const ADJECTIVES := ["Happy", "Sad", "Excited", "Angry", "Joyful", "Peaceful", "Grumpy", "Elated", "Nervous", "Relaxed"]
+
+func _ready() -> void:
+	scoreboard_data = ScoreboardProto.Scoreboard.new()
 
 func generate_name() -> StringName:
 	return ADJECTIVES.pick_random() + " " + NOUNS.pick_random()	
 
+@export var handshake_headers: PackedStringArray
+@export var supported_protocols: PackedStringArray
+var tls_options: TLSOptions = null
 
-var rtc_mp := WebRTCMultiplayerPeer.new()
-var sealed := false
+var socket := WebSocketPeer.new()
+var last_state := WebSocketPeer.STATE_CLOSED
 
-func _init() -> void:
-	connected.connect(_connected)
-	disconnected.connect(_disconnected)
+signal connected_to_server()
+signal connection_closed()
 
-	offer_received.connect(_offer_received)
-	answer_received.connect(_answer_received)
-	candidate_received.connect(_candidate_received)
+func start(url = "ws://127.0.0.1:8080"):
+	socket.supported_protocols = supported_protocols
+	socket.handshake_headers = handshake_headers
+	
+	var err := socket.connect_to_url(url, tls_options)
+	if err != OK:
+		printerr(err)
+		
+	last_state = socket.get_ready_state()
 
-	lobby_joined.connect(_lobby_joined)
-	lobby_sealed.connect(_lobby_sealed)
-	peer_connected.connect(_peer_connected)
-	peer_disconnected.connect(_peer_disconnected)
+func register(data : PackedByteArray) -> void:
+	
+	if last_state != WebSocketPeer.STATE_OPEN:
+		await get_tree().create_timer(0.1).timeout
+	
+	var outward_package : PackedByteArray
+	outward_package = (generate_name() + "NOT_SET").to_utf8_buffer()
+	outward_package.insert(0,1)
+	socket.send(outward_package)
 
+func send(message_type : int, message: PackedByteArray) -> void:
+	message.insert(0 ,message_type)
+	socket.send(message)
+	
+func send_empty(message_type : int) -> void:
+	var empty_message : PackedByteArray
+	empty_message.insert(0 ,message_type)
+	socket.send(empty_message)
 
-
-func start(url: String = "ws://localhost:8080/ws", _lobby: String = "", _mesh: bool = true) -> void:
-	stop()
-	sealed = false
-	mesh = _mesh
-	lobby = _lobby
-	connect_to_url(url)
-	register_player(local_player_bytes)
-	enable_polling()
-
-func stop() -> void:
-	multiplayer.multiplayer_peer = null
-	rtc_mp.close()
-	close()
-
-
-func _create_peer(id: int) -> WebRTCPeerConnection:
-	var peer: WebRTCPeerConnection = WebRTCPeerConnection.new()
-	# Use a public STUN server for moderate NAT traversal.
-	# Note that STUN cannot punch through strict NATs (such as most mobile connections),
-	# in which case TURN is required. TURN generally does not have public servers available,
-	# as it requires much greater resources to host (all traffic goes through
-	# the TURN server, instead of only performing the initial connection).
-	peer.initialize({
-		"iceServers": [ { "urls": ["stun:stun.l.google.com:19302"] } ]
-	})
-	peer.session_description_created.connect(_offer_created.bind(id))
-	peer.ice_candidate_created.connect(_new_ice_candidate.bind(id))
-	rtc_mp.add_peer(peer, id)
-	if id < rtc_mp.get_unique_id():  # So lobby creator never creates offers.
-		peer.create_offer()
-	return peer
-
-
-func _new_ice_candidate(mid_name: String, index_name: int, sdp_name: String, id: int) -> void:
-	send_candidate(id, mid_name, index_name, sdp_name)
-
-
-func _offer_created(type: String, data: String, id: int) -> void:
-	if not rtc_mp.has_peer(id):
+func get_message() -> void:
+	if socket.get_available_packet_count() < 1:
 		return
-	print("created", type)
-	rtc_mp.get_peer(id).connection.set_local_description(type, data)
-	if type == "offer": send_offer(id, data)
-	else: send_answer(id, data)
+	
+	var data : PackedByteArray = socket.get_packet()
+	var message_type := data.decode_u8(0)
+	var message_data := 	data.slice(1)
+	
+	match message_type:
+		REQUEST_PLAYERS:
+			register_puppets(message_data)
+		REGISTER:
+			register_local_player(message_data)
+		UPDATE_LOCATION:
+			update_puppet_positions(message_data)
+		POLL_LOCATIONS:
+			pass
+		DAMAGE_PLAYER:
+			update_player_health(message_data)
+		INIT_CAST:
+			set_puppet_cast(message_data)
+		RESPAWN_PLAYER:
+			handle_player_death(message_data)
+		REQUEST_SCOREBOARD:
+			handle_scoreboard(message_data)
+		PLAYER_DISCONNECT:
+			pass
+		_:
+			printerr("Undefined message type: ", message_type)
+
+func handle_scoreboard(message_data : PackedByteArray) -> void:
+	var new_score = ScoreboardProto.Scoreboard.new()
+	var result = new_score.from_bytes(message_data)
+	
+	if result == ScoreboardProto.PB_ERR.NO_ERRORS:
+		scoreboard_data = new_score
+		update_scoreboard.emit()
+
+func handle_player_death(message_data : PackedByteArray) -> void:
+	var dead_player = PlayerProto.Player.new()
+	var result = dead_player.from_bytes(message_data)
+	
+	if result == PlayerProto.PB_ERR.NO_ERRORS:
+		player_died.emit(dead_player)
+	
+
+func set_puppet_cast(message_data : PackedByteArray) -> void:
+	var new_puppet_cast = PlayerProto.Damage.new()
+	var result = new_puppet_cast.from_bytes(message_data)
+	
+	if result == PlayerProto.PB_ERR.NO_ERRORS:
+		puppet_fire_projectile.emit(new_puppet_cast.get_caster_id())
+	else :
+		printerr("Unpacking failed.")
 
 
-func _connected(id: int, use_mesh: bool) -> void:
-	print("Connected %d, mesh: %s" % [id, use_mesh])
-	if use_mesh:
-		rtc_mp.create_mesh(id)
-	elif id == 1:
-		rtc_mp.create_server()
+func update_player_health(message_data : PackedByteArray) -> void:
+	var new_damage = PlayerProto.Player.new()
+	var result = new_damage.from_bytes(message_data)
+	
+	if result == PlayerProto.PB_ERR.NO_ERRORS:
+		update_health.emit(new_damage)
+	else :
+		printerr("Unpacking failed.")
+
+func register_puppets(message_data : PackedByteArray) -> void:
+	var new_puppet_data = PlayerProto.Players.new()
+	var result = new_puppet_data.from_bytes(message_data)
+	
+	if result == PlayerProto.PB_ERR.NO_ERRORS:
+		for puppet in new_puppet_data.get_player():
+			if puppet.get_id() != local_player_id:
+				new_puppet.emit(puppet)
+	else :
+		printerr("Unpacking failed.")
+
+func register_local_player(message_data : PackedByteArray) -> void:
+	var new_player_data = PlayerProto.Player.new()
+	var result = new_player_data.from_bytes(message_data)
+	if result == PlayerProto.PB_ERR.NO_ERRORS:
+		if local_player_id == 0:
+			local_player_id = new_player_data.get_id()
+			player_registed.emit(new_player_data)
+			var new_position := new_player_data.get_pos()
+			player_new_position.emit(Vector3(new_position[0].get_x(), new_position[0].get_y(), new_position[0].get_z()))
 	else:
-		rtc_mp.create_client(id)
-	multiplayer.multiplayer_peer = rtc_mp
-	player_id_received.emit(id)
+		printerr("Unpacking failed.")
 
 
-func _lobby_joined(_lobby: String) -> void:
-	lobby = _lobby
+func update_puppet_positions(message_data : PackedByteArray) -> void:
+	var new_location_data = PlayerProto.Players.new()
+	var result = new_location_data.from_bytes(message_data)
+
+	if result == PlayerProto.PB_ERR.NO_ERRORS:
+		for puppet in new_location_data.get_player():
+				puppet_new_position.emit(puppet)
+	else :
+		printerr("Unpacking failed.")
+
+func close(code: int = 1000, reason: String = "") -> void:
+	socket.close(code, reason)
+	last_state = socket.get_ready_state()
 
 
-func _lobby_sealed() -> void:
-	sealed = true
+func clear() -> void:
+	socket = WebSocketPeer.new()
+	last_state = socket.get_ready_state()
 
 
-func _disconnected() -> void:
-	print("Disconnected: %d: %s" % [code, reason])
-	if not sealed:
-		stop() # Unexpected disconnect
+func get_socket() -> WebSocketPeer:
+	return socket
 
 
-func _peer_connected(id: int) -> void:
-	print("Peer connected: %d" % id)
-	_create_peer(id)
+func poll() -> void:
+	if socket.get_ready_state() != socket.STATE_CLOSED:
+		socket.poll()
+
+	var state := socket.get_ready_state()
+
+	if last_state != state:
+		last_state = state
+		if state == socket.STATE_OPEN:
+			connected_to_server.emit()
+		elif state == socket.STATE_CLOSED:
+			connection_closed.emit()
+	while socket.get_ready_state() == socket.STATE_OPEN and socket.get_available_packet_count():
+		get_message()
 
 
-func _peer_disconnected(id: int) -> void:
-	if rtc_mp.has_peer(id):
-		rtc_mp.remove_peer(id)
-
-
-func _offer_received(id: int, offer: int) -> void:
-	print("Got offer: %d" % id)
-	if rtc_mp.has_peer(id):
-		rtc_mp.get_peer(id).connection.set_remote_description("offer", offer)
-
-
-func _answer_received(id: int, answer: int) -> void:
-	print("Got answer: %d" % id)
-	if rtc_mp.has_peer(id):
-		rtc_mp.get_peer(id).connection.set_remote_description("answer", answer)
-
-
-func _candidate_received(id: int, mid: String, index: int, sdp: String) -> void:
-	if rtc_mp.has_peer(id):
-		rtc_mp.get_peer(id).connection.add_ice_candidate(mid, index, sdp)
+func _physics_process(delta: float) -> void:
+	poll()

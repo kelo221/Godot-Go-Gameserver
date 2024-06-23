@@ -22,7 +22,7 @@ script = ExtResource("1_wansf")
 environment = SubResource("Environment_ghild")
 
 [node name="MeshInstance3D" type="MeshInstance3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 13, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 15, 0)
 mesh = SubResource("BoxMesh_gs6ip")
 
 [node name="StaticBody3D" type="StaticBody3D" parent="MeshInstance3D"]

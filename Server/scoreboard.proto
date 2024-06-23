@@ -1,0 +1,14 @@
+syntax = "proto2";
+package tutorial;
+
+option go_package = "./proto";
+
+message Score {
+  required string name = 1;
+  required uint32 id = 2;
+  required uint32 score = 3;
+}
+
+message Scoreboard {
+  repeated Score score = 1;
+}

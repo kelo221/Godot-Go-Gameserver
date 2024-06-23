@@ -26,10 +26,11 @@ message Player {
   required PLAYER_STATE player_state = 10;
 }
 
+// Message also used for sending ID of other tasks
 message Damage{
   required uint32 caster_id = 1;
-  required uint32 target_id = 2;
-  required float damage = 3;
+  optional uint32 target_id = 2;
+  optional float damage = 3;
 }
 
 enum PLAYER_STATE {

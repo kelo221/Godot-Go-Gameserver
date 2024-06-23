@@ -1,0 +1,21 @@
+[gd_scene load_steps=2 format=3 uid="uid://c0ik6jsxe0fqn"]
+
+[ext_resource type="Script" path="res://scripts/score.gd" id="1_ihvd2"]
+
+[node name="Score" type="HSplitContainer"]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_ihvd2")
+
+[node name="Who" type="Label" parent="."]
+layout_mode = 2
+size_flags_horizontal = 0
+text = "ME"
+
+[node name="Score" type="Label" parent="."]
+layout_mode = 2
+size_flags_horizontal = 8
+text = "INFINITE!"

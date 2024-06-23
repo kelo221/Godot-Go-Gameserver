@@ -1,19 +1,18 @@
-[gd_scene load_steps=4 format=3 uid="uid://dv7xsg2fyfedt"]
+[gd_scene load_steps=6 format=3 uid="uid://dv7xsg2fyfedt"]
 
 [ext_resource type="Script" path="res://scripts/player.gd" id="1_s4vi4"]
-
-[sub_resource type="CapsuleMesh" id="CapsuleMesh_5q4dk"]
+[ext_resource type="PackedScene" uid="uid://d164t2orni8jh" path="res://scenes/scoreboard_control.tscn" id="2_dqsww"]
 
 [sub_resource type="CapsuleShape3D" id="CapsuleShape3D_jgdtc"]
 
+[sub_resource type="StandardMaterial3D" id="StandardMaterial3D_0ym1w"]
+
+[sub_resource type="CapsuleMesh" id="CapsuleMesh_5q4dk"]
+
 [node name="Player" type="CharacterBody3D"]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1, 0)
+collision_layer = 3
 script = ExtResource("1_s4vi4")
-
-[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
-mesh = SubResource("CapsuleMesh_5q4dk")
-
-[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
-shape = SubResource("CapsuleShape3D_jgdtc")
 
 [node name="SpotLight3D" type="SpotLight3D" parent="."]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, -0.5)
@@ -27,6 +26,28 @@ transform = Transform3D(1, 0, 0, 0, 0.866025, 0.5, 0, -0.5, 0.866025, 0, 2, 3.11
 fov = 90.0
 
 [node name="PlayerNameLabel" type="Label3D" parent="."]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.15903, 0)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.44275, 0)
 billboard = 1
 text = "PLAYER_NAME"
+
+[node name="PlayerHealthLabel" type="Label3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.20074, 0)
+billboard = 1
+text = "100/100"
+
+[node name="CollisionShape3D" type="CollisionShape3D" parent="."]
+shape = SubResource("CapsuleShape3D_jgdtc")
+
+[node name="MeshInstance3D" type="MeshInstance3D" parent="."]
+material_override = SubResource("StandardMaterial3D_0ym1w")
+mesh = SubResource("CapsuleMesh_5q4dk")
+
+[node name="InputEmulatorTimer" type="Timer" parent="."]
+wait_time = 5.0
+one_shot = true
+autostart = true
+
+[node name="ScoreboardControl" parent="." instance=ExtResource("2_dqsww")]
+visible = false
+
+[connection signal="timeout" from="InputEmulatorTimer" to="." method="_on_input_emulator_timeout"]
