@@ -16,12 +16,12 @@ import (
 )
 
 var (
-	upgrader = newUpgrader()
-	mu       sync.RWMutex
+	upgrader   = newUpgrader()
+	players    sync.Map
+	scoreboard sync.Map
+	conns      sync.Map
+	mu         sync.Mutex
 )
-var scoreboard = make(map[uint32]*proto.Score)
-var players = make(map[uint32]*proto.Player)
-var conns = make(map[uint32]*websocket.Conn)
 
 func newUpgrader() *websocket.Upgrader {
 	u := websocket.NewUpgrader()
@@ -34,37 +34,31 @@ func newUpgrader() *websocket.Upgrader {
 func onClose(c *websocket.Conn, err error) {
 	session := c.Session()
 	if session != nil {
-		playerID, ok := session.(uint32)
-		if ok {
-			broadcastMessage(PLAYER_DISCONNECT, disconnectedPlayerData(playerID))
-			mu.Lock()
-			delete(scoreboard, playerID)
-			delete(players, playerID)
-			delete(conns, playerID)
-			mu.Unlock()
+		if playerID, ok := session.(uint32); ok {
+			broadcastPlayerData(PLAYER_DISCONNECT, disconnectedPlayerData(playerID), playerID)
+			players.Delete(playerID)
+			scoreboard.Delete(playerID)
+			conns.Delete(playerID)
+			broadcastMessage(REQUEST_SCOREBOARD, returnScoreboard())
 		}
 	}
-
-	fmt.Println(c.Session())
 	fmt.Println("OnClose:", c.RemoteAddr().String(), err)
 }
 
 func disconnectedPlayerData(id uint32) []byte {
+	mu.Lock()
+	defer mu.Unlock()
 
-	print(players)
-
-	if _, ok := players[id]; ok {
-		byteSlice, protoerr := proto2.Marshal(players[id])
-		if protoerr != nil {
-			println(protoerr.Error())
+	if player, ok := players.Load(id); ok {
+		byteSlice, protoErr := proto2.Marshal(player.(*proto.Player))
+		if protoErr != nil {
+			fmt.Printf("Error marshaling disconnected player with ID %d: %v\n", id, protoErr)
 			return nil
 		}
 		return byteSlice
-	} else {
-		println("Player not found")
-		return nil
 	}
-
+	fmt.Printf("Player with ID %d not found\n", id)
+	return nil
 }
 
 const (
@@ -82,251 +76,221 @@ const (
 func onMessage(c *websocket.Conn, messageType websocket.MessageType, _data []byte) {
 	switch messageType {
 	case websocket.TextMessage:
-		// Handle text message if necessary
 		fmt.Println("Received a text message, which is not expected.")
-		return
 	case websocket.BinaryMessage:
-		// Handle binary message
 		msgType := _data[0]
 		data := _data[1:]
 
 		switch msgType {
-
 		case REQUEST_PLAYERS:
-			print("Requesting players")
 			err := c.WriteMessage(websocket.BinaryMessage, pollPlayers())
 			if err != nil {
-				println(err.Error())
-				return
+				fmt.Println("REQUEST_PLAYERS error")
+				fmt.Println(err.Error())
 			}
-
 		case REGISTER:
 			err := c.WriteMessage(websocket.BinaryMessage, registerPlayer(data, c))
 			if err != nil {
-				return
+				fmt.Println("REGISTER error")
+				fmt.Println(err.Error())
 			}
-
-			// Send the updated player list to all clients, excluding the new player
 			broadcastPlayerData(REQUEST_PLAYERS, pollPlayers(), c.Session().(uint32))
-
-			// Send the updated scoreboard to all clients
 			broadcastMessage(REQUEST_SCOREBOARD, returnScoreboard())
 		case UPDATE_LOCATION:
 			updatePlayerLocation(data)
-
 		case POLL_LOCATIONS:
 			err := c.WriteMessage(websocket.BinaryMessage, pollPlayerLocations())
 			if err != nil {
-				return
+				fmt.Println("POLL_LOCATIONS error")
+				fmt.Println(err.Error())
 			}
-
 		case DAMAGE_PLAYER:
-			// If player is killed and needs to be respawned, return the new player state
 			isDead := damagePlayer(data)
 			if isDead != nil {
 				broadcastMessage(RESPAWN_PLAYER, isDead)
 				broadcastMessage(REQUEST_SCOREBOARD, returnScoreboard())
 			}
-
 		case INIT_CAST:
 			broadcastPlayerData(INIT_CAST, data, c.Session().(uint32))
-
 		case REQUEST_SCOREBOARD:
 			err := c.WriteMessage(websocket.BinaryMessage, returnScoreboard())
 			if err != nil {
-				return
+				fmt.Println("REQUEST_SCOREBOARD error")
+				fmt.Println(err.Error())
 			}
-
 		default:
 			fmt.Println("Unknown message type", msgType)
 		}
-
 	default:
 		fmt.Printf("Received unexpected message type: %v\n", messageType)
 	}
 }
 
 func broadcastPlayerData(messageType byte, message []byte, id uint32) {
-
-	mu.RLock()
-	defer mu.RUnlock()
-	for _, conn := range conns {
-
-		if conn.Session().(uint32) == id {
-			continue
+	conns.Range(func(_, value interface{}) bool {
+		conn := value.(*websocket.Conn)
+		if conn.Session().(uint32) != id {
+			err := conn.WriteMessage(websocket.BinaryMessage, append([]byte{messageType}, message...))
+			if err != nil {
+				fmt.Println("Failed to send message to client:", err)
+			}
 		}
-
-		err := conn.WriteMessage(2, append([]byte{messageType}, message...))
-		if err != nil {
-			fmt.Println("Failed to send message to client:", err)
-		}
-	}
+		return true
+	})
 }
 
 func returnScoreboard() []byte {
-	mu.RLock()
 	scoreSlice := proto.Scoreboard{}
-
-	for _, score := range scoreboard {
+	scoreboard.Range(func(_, value interface{}) bool {
+		score := value.(*proto.Score)
 		scoreSlice.Score = append(scoreSlice.Score, score)
-	}
-
-	byteSlice, protoerr := proto2.Marshal(&scoreSlice)
-	mu.RUnlock()
-
-	if protoerr != nil {
-		println(protoerr.Error())
+		return true
+	})
+	byteSlice, protoErr := proto2.Marshal(&scoreSlice)
+	if protoErr != nil {
+		fmt.Printf("Error marshaling Scoreboard: %v\n", protoErr)
 		return nil
 	}
-
 	return append([]byte{REQUEST_SCOREBOARD}, byteSlice...)
-
 }
 
 func respawnPlayer(p *proto.Player) []byte {
-
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-
 	newX := rnd.Float32()*18 - 9
 	newZ := rnd.Float32()*18 - 9
 
-	mu.Lock()
-	if player, ok := players[p.GetId()]; ok {
-		player.Health = proto2.Float32(100)
-		p.Pos = []*proto.Player_Position{
-			{X: proto2.Float32(newX), Y: proto2.Float32(1.0), Z: proto2.Float32(newZ)},
-		}
-
+	p.Health = proto2.Float32(100)
+	p.Pos = []*proto.Player_Position{
+		{X: proto2.Float32(newX), Y: proto2.Float32(1.0), Z: proto2.Float32(newZ)},
 	}
-	mu.Unlock()
-
-	byteSlice, protoerr := proto2.Marshal(p)
-
-	if protoerr != nil {
-		println(protoerr.Error())
+	byteSlice, protoErr := proto2.Marshal(p)
+	if protoErr != nil {
+		fmt.Printf("Error marshaling respawned player with ID %d: %v\n", p.GetId(), protoErr)
 		return nil
 	}
-
 	return append([]byte{RESPAWN_PLAYER}, byteSlice...)
 }
 
-// Broadcast a message to all clients
 func broadcastMessage(messageType byte, message []byte) {
-
-	mu.RLock()
-	defer mu.RUnlock()
-	for _, conn := range conns {
-		err := conn.WriteMessage(2, append([]byte{messageType}, message...))
+	conns.Range(func(_, value interface{}) bool {
+		conn := value.(*websocket.Conn)
+		err := conn.WriteMessage(websocket.BinaryMessage, append([]byte{messageType}, message...))
 		if err != nil {
 			fmt.Println("Failed to send message to client:", err)
 		}
-	}
+		return true
+	})
 }
 
 func damagePlayer(data []byte) []byte {
 	p := proto.Damage{}
 	err := proto2.Unmarshal(data, &p)
 	if err != nil {
-		println(err.Error())
+		fmt.Printf("Error unmarshaling damage data: %v\n", err)
+		return nil
 	}
-	queRespawn := false
 
 	var targetPlayer *proto.Player
+	queRespawn := false
 
-	mu.Lock()
-	if player, ok := players[p.GetTargetId()]; ok {
-		targetPlayer = player
+	if value, ok := players.Load(p.GetTargetId()); ok {
+		player := value.(*proto.Player)
 		player.Health = proto2.Float32(player.GetHealth() - p.GetDamage())
 		if player.GetHealth() <= 0 {
 			queRespawn = true
-			scoreboard[p.GetCasterId()].Score = proto2.Uint32(scoreboard[p.GetCasterId()].GetScore() + 1)
+			if scoreValue, ok := scoreboard.Load(p.GetCasterId()); ok {
+				score := scoreValue.(*proto.Score)
+				score.Score = proto2.Uint32(score.GetScore() + 1)
+				scoreboard.Store(p.GetCasterId(), score)
+			}
 		}
-
-	}
-	mu.Unlock()
-
-	byteSlice, protoerr := proto2.Marshal(targetPlayer)
-	if protoerr != nil {
-		println(protoerr.Error())
+		targetPlayer = player
+		players.Store(p.GetTargetId(), player)
 	}
 
-	// Broadcast the updated player state to all clients
+	byteSlice, protoErr := proto2.Marshal(targetPlayer)
+	if protoErr != nil {
+		fmt.Printf("Error marshaling damaged player with ID %d: %v\n", targetPlayer.GetId(), protoErr)
+		return nil
+	}
+
 	broadcastMessage(DAMAGE_PLAYER, byteSlice)
-
 	if queRespawn {
 		return respawnPlayer(targetPlayer)
 	}
 	return nil
 }
 
+// pollPlayers polls the players and marshals the data to be sent.
 func pollPlayers() []byte {
-	mu.RLock()
-	playerSlice := make([]*proto.Player, 0, len(players))
-	for _, player := range players {
-		playerSlice = append(playerSlice, player)
-	}
-	byteSlice, protoerr := proto2.Marshal(&proto.Players{Player: playerSlice})
-	mu.RUnlock()
+	mu.Lock()
+	defer mu.Unlock()
 
-	if protoerr != nil {
-		println(protoerr.Error())
+	playerSlice := make([]*proto.Player, 0)
+	players.Range(func(_, value interface{}) bool {
+		player := value.(*proto.Player)
+		playerSlice = append(playerSlice, player)
+		return true
+	})
+
+	if len(playerSlice) == 0 {
+		return nil
+	}
+
+	byteSlice, protoErr := proto2.Marshal(&proto.Players{Player: playerSlice})
+	if protoErr != nil {
+		fmt.Printf("Error marshaling Players: %v\n", protoErr)
 		return nil
 	}
 	return append([]byte{REQUEST_PLAYERS}, byteSlice...)
 }
 
 func pollPlayerLocations() []byte {
-	mu.RLock()
-	playerSlice := make([]*proto.Player, 0, len(players))
-	for _, player := range players {
-		playerSlice = append(playerSlice, player)
-	}
-	byteSlice, protoerr := proto2.Marshal(&proto.Players{Player: playerSlice})
-	mu.RUnlock()
-
-	if protoerr != nil {
-		println(protoerr.Error())
-		return nil
-	}
-	return append([]byte{POLL_LOCATIONS}, byteSlice...)
+	return pollPlayers()
 }
 
 func updatePlayerLocation(data []byte) {
+	mu.Lock()
+	defer mu.Unlock()
 	p := proto.Player{}
 	err := proto2.Unmarshal(data, &p)
 	if err != nil {
+		fmt.Println("error in unmarshalling player data")
+		fmt.Println(err.Error())
 		return
 	}
 
-	mu.Lock()
-	// Update the player's position and rotation.
-	if player, ok := players[p.GetId()]; ok {
+	if value, ok := players.Load(p.GetId()); ok {
+		player := value.(*proto.Player)
 		player.Pos = p.Pos
 		player.RotationY = p.RotationY
 		player.RotationX = p.RotationX
+		players.Store(p.GetId(), player)
 	}
-	mu.Unlock()
 }
 
+// registerPlayer registers a new player and returns the marshaled player data.
 func registerPlayer(data []byte, c *websocket.Conn) []byte {
+	mu.Lock()
+	defer mu.Unlock()
 
 	tempPlayer := proto.Player{}
 	err := proto2.Unmarshal(data, &tempPlayer)
 	if err != nil {
-		println(err.Error())
+		fmt.Printf("Error unmarshaling player data during registration: %v\n", err)
 		return nil
 	}
 
 	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
-
 	newX := rnd.Float32()*18 - 9
 	newZ := rnd.Float32()*18 - 9
-
 	playerID := rand.Uint32()
 	c.SetSession(playerID)
 	playerState := proto.PLAYER_STATE_STANDING
 
 	p := &proto.Player{
+		Casting:      proto2.Bool(false),
+		CurrentSpell: proto2.Uint32(0),
 		PlayerColor:  proto2.String(tempPlayer.GetPlayerColor()),
 		PlayerState:  &playerState,
 		Name:         proto2.String(tempPlayer.GetName()),
@@ -334,38 +298,29 @@ func registerPlayer(data []byte, c *websocket.Conn) []byte {
 		RotationY:    proto2.Float32(0),
 		RotationX:    proto2.Float32(0),
 		Health:       proto2.Float32(100),
-		CurrentSpell: proto2.Uint32(0),
-		Casting:      proto2.Bool(false),
-		Pos: []*proto.Player_Position{
-			{X: proto2.Float32(newX), Y: proto2.Float32(1.0), Z: proto2.Float32(newZ)},
-		},
+		Pos:          []*proto.Player_Position{{X: proto2.Float32(newX), Y: proto2.Float32(1.0), Z: proto2.Float32(newZ)}},
 	}
 
-	mu.Lock()
-	players[playerID] = p
-	conns[playerID] = c
+	players.Store(playerID, p)
+	conns.Store(playerID, c)
 
-	byteSlice, protoerr := proto2.Marshal(p)
+	byteSlice, protoErr := proto2.Marshal(p)
+	if protoErr != nil {
+		fmt.Printf("Error marshaling player at registration with ID %d: %v\n", playerID, protoErr)
+		return nil
+	}
 
 	newPlayerScore := &proto.Score{
 		Name:  tempPlayer.Name,
 		Id:    proto2.Uint32(playerID),
 		Score: proto2.Uint32(0),
 	}
-	scoreboard[playerID] = newPlayerScore
-
-	mu.Unlock()
-
-	if protoerr != nil {
-		println(protoerr.Error())
-		return nil
-	}
+	scoreboard.Store(playerID, newPlayerScore)
 
 	return append([]byte{REGISTER}, byteSlice...)
 }
 
 func onRegister(c *websocket.Conn) {
-	// echo
 	fmt.Println("OnOpen:", c.RemoteAddr().String())
 }
 
@@ -394,11 +349,9 @@ func main() {
 		return
 	}
 
-	// Create a ticker that ticks 60 times per second
 	ticker := time.NewTicker(time.Second / 60)
 	defer ticker.Stop()
 
-	// Start a goroutine to broadcast player locations at each tick
 	go func() {
 		for range ticker.C {
 			broadcastMessage(UPDATE_LOCATION, pollPlayerLocations())
@@ -413,6 +366,6 @@ func main() {
 	defer cancel()
 	err = engine.Shutdown(ctx)
 	if err != nil {
-		return
+		fmt.Println("Engine shutdown failed:", err)
 	}
 }

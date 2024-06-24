@@ -28,6 +28,7 @@ signal player_new_position(new_position : Vector3)
 signal puppet_fire_projectile(puppet: PlayerProto.Player)
 signal puppet_new_position(puppet_id : int)
 signal new_puppet(player_data : PlayerProto.Player)
+signal player_disconnect(player_data : PlayerProto.Player)
 
 signal update_health(player_damage : PlayerProto.Player)
 signal update_scoreboard()
@@ -64,15 +65,14 @@ func start(url = "ws://127.0.0.1:8080"):
 		
 	last_state = socket.get_ready_state()
 
-func register(data : PackedByteArray) -> void:
+func register(message: PackedByteArray) -> bool:
 	
-	if last_state != WebSocketPeer.STATE_OPEN:
-		await get_tree().create_timer(0.1).timeout
+	while socket.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return false
 	
-	var outward_package : PackedByteArray
-	outward_package = (generate_name() + "NOT_SET").to_utf8_buffer()
-	outward_package.insert(0,1)
-	socket.send(outward_package)
+	message.insert(0 ,REGISTER)
+	socket.send(message)
+	return true
 
 func send(message_type : int, message: PackedByteArray) -> void:
 	message.insert(0 ,message_type)
@@ -109,10 +109,18 @@ func get_message() -> void:
 		REQUEST_SCOREBOARD:
 			handle_scoreboard(message_data)
 		PLAYER_DISCONNECT:
-			pass
+			delete_puppet(message_data)
 		_:
 			printerr("Undefined message type: ", message_type)
-
+			
+func delete_puppet(message_data : PackedByteArray) -> void:
+	var disconnected_player = PlayerProto.Player.new()
+	var result = disconnected_player.from_bytes(message_data)
+	
+	if result == PlayerProto.PB_ERR.NO_ERRORS:
+		player_disconnect.emit(disconnected_player)
+	
+	
 func handle_scoreboard(message_data : PackedByteArray) -> void:
 	var new_score = ScoreboardProto.Scoreboard.new()
 	var result = new_score.from_bytes(message_data)

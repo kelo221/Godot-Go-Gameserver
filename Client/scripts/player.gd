@@ -11,7 +11,7 @@ var local_player_data := PlayerProto.Player.new()
 const PROJECTILE = preload("res://scenes/projectile.tscn")
 var emulate_input := false
 
-
+var connection_tries := 0 
 const SPEED = 5.0
 const JUMP_VELOCITY = 4.5
 
@@ -43,7 +43,20 @@ func init_puppet() -> void:
 	new_color.albedo_color = Color(local_player_data.get_player_color())
 	mesh_instance_3d.material_override = new_color
 
+func player_disconnect(puppet : PlayerProto.Player) -> void:
+	if local_player_data.get_id() == puppet.get_id():
+		queue_free()
 
+func init_player() -> void:
+	local_player_data.set_player_color((Color(randf(), randf(), randf())).to_html())
+	local_player_data.set_health(100)
+	local_player_data.set_current_spell(0)
+	local_player_data.set_casting(false)
+	local_player_data.set_id(-1)
+	local_player_data.set_rotation_x(0)
+	local_player_data.set_rotation_y(0)
+	local_player_data.set_player_state(0)
+	local_player_data.set_name(Client.generate_name())
 
 func _ready() -> void:
 	
@@ -53,27 +66,24 @@ func _ready() -> void:
 	Client.connect("player_died", respawn)
 	
 	if not is_puppet:
-		
-		
 		Client.connect("player_registed", _on_player_registed)
 		Client.connect("player_new_position", set_spawn_position)
-	
-		local_player_data.set_player_color((Color(randf(), randf(), randf())).to_html())
-		local_player_data.set_health(100)
-		local_player_data.set_current_spell(0)
-		local_player_data.set_casting(false)
-		local_player_data.set_id(-1)
-		local_player_data.set_rotation_x(0)
-		local_player_data.set_rotation_y(0)
-		local_player_data.set_player_state(0)
-		local_player_data.set_name(Client.generate_name())
+		init_player()
 		
 		Client.start()
-		await get_tree().create_timer(.1).timeout
-		Client.send(REGISTER, local_player_data.to_bytes())
+		while Client.register(local_player_data.to_bytes()) == false:
+			await get_tree().create_timer(0.01).timeout
+			print("connecting... ", connection_tries, " tries.")
+			connection_tries += 1
+			
+			if connection_tries > 10:
+				printerr("Failed to connect!")
+				break
+		
 		Client.send_empty(REQUEST_PLAYERS)
 	else:
 		init_puppet()
+		Client.connect("player_disconnect", player_disconnect)
 		Client.connect("puppet_fire_projectile", puppet_init_projectile)
 		Client.connect("puppet_new_position", puppet_new_position)
 
