@@ -19,8 +19,9 @@
 
 # Networking
 
-Message Types
-The server handles the following message types as defined by enums on both ends of communication:
+### Message Types:
+
+The server and client handle the following message types as defined by enums:
 
 - REQUEST_PLAYERS
 - REGISTER
