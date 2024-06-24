@@ -15,7 +15,7 @@
 * Player Management: Players are stored in a concurrent map, with each player having an ID, name, health, position, and other attributes.
 * Message Handling: The server listens for various message types (e.g., player registration, location updates) and handles each accordingly.
 * Broadcasting: The server broadcasts player actions and game state updates to all connected clients.
-* Scoreboard: A scoreboard keeps track of player scores, which are updated based on game events (e.g., dealing damage).
+* Scoreboard: A scoreboard keeps track of player scores, players score by killing other clients.
 
 # Networking
 
